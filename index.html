@@ -91,7 +91,13 @@ function applyCSV(csv,isPreview=false){
     const val=key=>String(cells[idx[key]]??'').trim();
     const id=Number(normalizeDigits(val('item_id')));
     const category=val('category'),name=val('name'),size=val('size');
-    const price=Number(normalizeDigits(val('price_egp')).replace(/[,،\s]/g,''));
+    // Google Sheets can export a price as "95 EGP" even when the cell is numeric.
+    // Accept Arabic digits and number formatting, but reject unrecognised text.
+    const priceText=normalizeDigits(val('price_egp'))
+      .replace(/(?:EGP|جنيه(?:ات)?|ج\s*\.?\s*م\.?)/gi,'')
+      .replace(/[,،\u066c\s\u00a0]/g,'')
+      .trim();
+    const price=/^\d+(?:\.\d+)?$/.test(priceText)?Number(priceText):NaN;
     const available=val('available').toLowerCase();
     if(!Number.isInteger(id)||id<=0||!knownCats.has(category)||!name||!size||!val('price_egp')||!Number.isFinite(price)||price<0)continue;
     if(!['yes','true','1','نعم','متاح'].includes(available))continue;
@@ -133,7 +139,9 @@ async function refreshPrices(){
   }catch(e){
     console.warn('Menu refresh failed:',e);
     pricesReady=false;
-    $('priceStatus').textContent='⚠️ تعذر تحميل الأسعار الحية من Google Sheets. الأصناف دي للمعاينة فقط، والطلبات متوقفة لحين الاتصال. لو بتفتح الملف في معاينة ChatGPT، اختبر الرابط بعد نشره على GitHub Pages.';
+    const reason=String(e&&e.message||e);
+    const details=reason.includes('CSV headers mismatch')?'بيانات الأعمدة مش مطابقة للجدول.':reason.includes('CSV has no valid products')?'الجدول اتحمّل لكن مفيش أصناف بأسعار صالحة. راجع تنسيق الأسعار والأعمدة.':reason.includes('CSV is empty')?'رابط CSV رجّع ملف فاضي.':/^(?:HTTP )/.test(reason)?'رابط جوجل رجّع خطأ '+reason+'.':'الاتصال برابط Google Sheets فشل، أو المتصفح منع قراءة الرد.';
+    $('priceStatus').textContent='⚠️ '+details+' المنيو للمعاينة فقط والطلب عبر واتساب متوقف. (تفاصيل: '+reason.slice(0,110)+')';
     $('priceStatus').style.color='#a12a21';
     $('retryPrice').style.display='inline-block';
     renderCart();
